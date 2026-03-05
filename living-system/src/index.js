@@ -6,6 +6,8 @@ const EventLog = require('./core/memory/event-log');
 const OllamaClient = require('./core/llm/client');
 const BotManager = require('./orchestrator/bot-manager');
 const Logger = require('./orchestrator/logger');
+const ConversationLogger = require('./logging/conversation-logger');
+const Dashboard = require('./logging/dashboard');
 
 /**
  * Entry point — wires everything together and starts the system.
@@ -43,6 +45,10 @@ async function main() {
   logger.init();
   console.log(`  Logs: ${settings.paths.logs}`);
 
+  const conversationLogger = new ConversationLogger({ logDir: settings.paths.logs });
+  conversationLogger.init();
+  console.log(`  Narrative logs: ${settings.paths.logs}/narrative/`);
+
   // ── 3. Check LLM health ──
   console.log(`\nChecking Ollama at ${settings.llm.baseUrl} (model: ${settings.llm.model})...`);
   const llmOk = await llmClient.healthCheck();
@@ -64,15 +70,23 @@ async function main() {
     tickMs: settings.loop.tickMs,
     autoRespawn: true,
     respawnDelayMs: settings.loop.spawnDelayMs,
+    conversationLogger,
   });
 
   // ── 5. Spawn all bots ──
   await manager.spawnAll(1000);
 
-  // ── 6. Status summary every 60 seconds ──
-  const statusInterval = setInterval(() => {
-    printStatus(manager, store);
-  }, 60000);
+  // ── 6. Dashboard (replaces old printStatus interval) ──
+  const dashboard = new Dashboard({
+    manager,
+    store,
+    intervalMs: 30000,
+  });
+
+  // Wire dashboard into bot manager so new bots get it too
+  manager.dashboard = dashboard;
+
+  dashboard.start();
 
   // ── 7. Graceful shutdown ──
   let shuttingDown = false;
@@ -84,10 +98,11 @@ async function main() {
     console.log(`\n\nReceived ${signal}. Shutting down gracefully...\n`);
     logger.info(`Shutdown initiated by ${signal}`);
 
-    clearInterval(statusInterval);
+    dashboard.stop();
     manager.stopAll();
     store.close();
     logger.close();
+    conversationLogger.close();
 
     console.log('Goodbye.\n');
     process.exit(0);
@@ -96,55 +111,8 @@ async function main() {
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 
-  // Print initial status
-  printStatus(manager, store);
-
   console.log('Press Ctrl+C to stop.\n');
-}
-
-/**
- * Print a status summary to the console.
- *
- * @param {import('./orchestrator/bot-manager')} manager
- * @param {import('./core/documents/store')} store
- */
-function printStatus(manager, store) {
-  const status = manager.getStatus();
-
-  console.log('\n--- Status ---');
-  console.log(`  Bots alive: ${status.alive}/${status.total}`);
-
-  if (status.bots.length > 0) {
-    for (const bot of status.bots) {
-      const state = bot.alive ? 'ALIVE' : 'DEAD';
-      console.log(`    ${bot.name} (K${bot.kegan}): ${state}`);
-    }
-  }
-
-  // Document counts by type
-  try {
-    const docCounts = {};
-    const allBotIds = status.bots.map((b) => b.id);
-    const seen = new Set();
-    for (const botId of allBotIds) {
-      const docs = store.getDocumentsForBot(botId);
-      for (const doc of docs) {
-        if (seen.has(doc.id)) continue;
-        seen.add(doc.id);
-        docCounts[doc.type] = (docCounts[doc.type] || 0) + 1;
-      }
-    }
-    if (Object.keys(docCounts).length > 0) {
-      console.log('  Documents:');
-      for (const [type, count] of Object.entries(docCounts)) {
-        console.log(`    ${type}: ${count}`);
-      }
-    }
-  } catch {
-    // DB may be closed during shutdown
-  }
-
-  console.log('--------------\n');
+  console.log('Narrative logs: tail -f logs/narrative/day-*.log\n');
 }
 
 main().catch((err) => {

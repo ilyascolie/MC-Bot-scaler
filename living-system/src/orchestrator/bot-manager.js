@@ -25,7 +25,7 @@ class BotManager {
    * @param {boolean} [deps.autoRespawn=true]
    * @param {number}  [deps.respawnDelayMs=10000]
    */
-  constructor({ llmClient, store, eventLog, logger, serverConfig, tickMs = 5000, autoRespawn = true, respawnDelayMs = 10000 }) {
+  constructor({ llmClient, store, eventLog, logger, serverConfig, tickMs = 5000, autoRespawn = true, respawnDelayMs = 10000, conversationLogger, dashboard }) {
     this.llmClient = llmClient;
     this.store = store;
     this.eventLog = eventLog;
@@ -34,6 +34,8 @@ class BotManager {
     this.tickMs = tickMs;
     this.autoRespawn = autoRespawn;
     this.respawnDelayMs = respawnDelayMs;
+    this.conversationLogger = conversationLogger || null;
+    this.dashboard = dashboard || null;
 
     /** @type {Map<string, { bot: Bot, intervalId: NodeJS.Timeout, persona: object }>} */
     this.bots = new Map();
@@ -74,6 +76,8 @@ class BotManager {
       llmClient: this.llmClient,
       eventLog: this.eventLog,
       tickMs: this.tickMs,
+      conversationLogger: this.conversationLogger,
+      dashboard: this.dashboard,
     });
 
     this.bots.set(persona.id, { bot, intervalId, persona });
@@ -155,6 +159,9 @@ class BotManager {
     const name = entry.persona.name;
     console.log(`  ${name} died!`);
     this.logger.logError(name, 'Bot died');
+
+    if (this.dashboard) this.dashboard.addEvent(`${name} died`);
+    if (this.conversationLogger) this.conversationLogger.logEvent(`${name} died`);
 
     // Stop the decision loop
     clearInterval(entry.intervalId);

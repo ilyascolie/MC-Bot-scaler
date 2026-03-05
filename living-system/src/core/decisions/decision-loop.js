@@ -8,10 +8,14 @@ const { parseResponse, isValid } = require('../llm/response-parser');
  * @param {import('../documents/store')} store
  * @param {import('../llm/client')} llmClient
  * @param {import('../memory/event-log')} eventLog
+ * @param {object} [hooks] — optional logging hooks
+ * @param {object} [hooks.conversationLogger]
+ * @param {object} [hooks.dashboard]
  * @returns {Promise<import('../llm/response-parser').DecisionResult|null>}
  */
-async function tick(bot, store, llmClient, eventLog) {
+async function tick(bot, store, llmClient, eventLog, hooks) {
   const botId = bot.persona.id;
+  const tickStart = Date.now();
 
   // 1. PERCEIVE
   const perception = bot.perceive();
@@ -214,6 +218,42 @@ async function tick(bot, store, llmClient, eventLog) {
     }
   }
 
+  // 9. NARRATIVE LOG + DASHBOARD
+  const decisionTimeMs = Date.now() - tickStart;
+  if (hooks) {
+    try {
+      if (hooks.conversationLogger) {
+        hooks.conversationLogger.logTick({
+          botName: bot.persona.name,
+          perception,
+          decision,
+          store,
+          botId,
+          decisionTimeMs,
+        });
+      }
+      if (hooks.dashboard) {
+        hooks.dashboard.recordLlmCall(decisionTimeMs);
+
+        // Add notable events for the dashboard
+        if (decision.propose) {
+          hooks.dashboard.addEvent(`${bot.persona.name} proposed ${decision.propose.type} to ${decision.propose.scope}`);
+        }
+        if (decision.sign) {
+          hooks.dashboard.addEvent(`${bot.persona.name} signed a document`);
+        }
+        if (decision.reject) {
+          hooks.dashboard.addEvent(`${bot.persona.name} rejected a document`);
+        }
+        if (decision.challenge) {
+          hooks.dashboard.addEvent(`${bot.persona.name} challenged a document`);
+        }
+      }
+    } catch (_) {
+      // Logging hooks are best-effort
+    }
+  }
+
   return decision;
 }
 
@@ -349,8 +389,11 @@ function checkAgreementViolations(bot, store, eventLog) {
  * @param {number} [settings.tickMs=5000] — milliseconds between ticks
  * @returns {NodeJS.Timeout} — interval id (pass to clearInterval to stop)
  */
-function startDecisionLoop(bot, store, { llmClient, eventLog, tickMs = 5000 }) {
+function startDecisionLoop(bot, store, { llmClient, eventLog, tickMs = 5000, conversationLogger, dashboard }) {
   let running = false;
+  const hooks = (conversationLogger || dashboard)
+    ? { conversationLogger, dashboard }
+    : undefined;
 
   const intervalId = setInterval(async () => {
     // Guard: skip if the previous tick is still running or bot is dead
@@ -359,7 +402,7 @@ function startDecisionLoop(bot, store, { llmClient, eventLog, tickMs = 5000 }) {
 
     running = true;
     try {
-      await tick(bot, store, llmClient, eventLog);
+      await tick(bot, store, llmClient, eventLog, hooks);
     } catch (err) {
       eventLog.push(bot.persona.id, {
         type: 'error',
