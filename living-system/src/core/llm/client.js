@@ -1,98 +1,112 @@
 /**
- * OllamaClient — POST to /api/generate on a local or remote Ollama instance.
+ * LLMClient — provider-agnostic LLM client with tiered model support.
  *
- * Usage:
- *   const client = new OllamaClient({ baseUrl, model });
- *   const text = await client.generate(prompt, systemPrompt);
+ * Loads the configured provider (anthropic, ollama, vllm) and exposes two
+ * generation methods:
+ *   - generate(prompt, systemPrompt)         → routine model (fast/cheap)
+ *   - generateStrategic(prompt, systemPrompt) → strategic model (smart/expensive)
+ *
+ * Retry logic (once) lives here so providers stay simple.
  */
 
-class OllamaClient {
+const PROVIDERS = {
+  anthropic: './providers/anthropic',
+  ollama: './providers/ollama',
+  vllm: './providers/vllm',
+};
+
+class LLMClient {
   /**
-   * @param {object}  config
-   * @param {string}  config.baseUrl      — e.g. 'http://localhost:11434'
-   * @param {string}  config.model        — Ollama model name (e.g. 'llama3')
-   * @param {number}  [config.temperature=0.7]
-   * @param {number}  [config.timeoutMs=30000]
+   * @param {object} config — from settings.llm
+   * @param {string} config.provider      — 'anthropic' | 'ollama' | 'vllm'
+   * @param {object} config.routine       — { model } for routine calls
+   * @param {object} [config.strategic]   — { model } for strategic calls (falls back to routine)
+   * @param {string} [config.apiKey]      — API key (required for anthropic)
+   * @param {string} [config.endpoint]    — base URL override
+   * @param {number} [config.temperature=0.7]
+   * @param {number} [config.maxTokens=1024]
+   * @param {number} [config.timeoutMs=60000]
    */
-  constructor({ baseUrl, model, temperature = 0.7, timeoutMs = 30000 }) {
-    this.baseUrl = baseUrl.replace(/\/+$/, '');
-    this.model = model;
-    this.temperature = temperature;
-    this.timeoutMs = timeoutMs;
+  constructor(config) {
+    const providerName = config.provider || 'ollama';
+    if (!PROVIDERS[providerName]) {
+      throw new Error(`Unknown LLM provider: ${providerName}. Valid: ${Object.keys(PROVIDERS).join(', ')}`);
+    }
+
+    const ProviderClass = require(PROVIDERS[providerName]);
+
+    // Build shared config (everything except model)
+    const shared = {
+      apiKey: config.apiKey,
+      endpoint: config.endpoint,
+      temperature: config.temperature ?? 0.7,
+      maxTokens: config.maxTokens ?? 1024,
+      timeoutMs: config.timeoutMs ?? 60000,
+    };
+
+    // Routine provider (always created)
+    const routineModel = (config.routine && config.routine.model) || config.model;
+    if (!routineModel) throw new Error('LLMClient requires routine.model or model');
+    this._routine = new ProviderClass({ ...shared, model: routineModel });
+
+    // Strategic provider (may be same as routine)
+    const strategicModel = config.strategic && config.strategic.model;
+    if (strategicModel && strategicModel !== routineModel) {
+      this._strategic = new ProviderClass({ ...shared, model: strategicModel });
+    } else {
+      this._strategic = this._routine;
+    }
+
+    this.providerName = providerName;
   }
 
   /**
-   * Send a generation request. Retries once on failure.
+   * Generate with the routine (fast/cheap) model. Retries once on failure.
    *
-   * @param {string}  prompt       — user/main prompt text
-   * @param {string}  [systemPrompt] — system prompt (persona, context)
-   * @returns {Promise<string>} — raw generated text
+   * @param {string} prompt
+   * @param {string} [systemPrompt]
+   * @returns {Promise<string>}
    */
   async generate(prompt, systemPrompt) {
-    const body = {
-      model: this.model,
-      prompt,
-      stream: false,
-      options: { temperature: this.temperature },
-    };
-    if (systemPrompt) body.system = systemPrompt;
+    return this._callWithRetry(this._routine, prompt, systemPrompt);
+  }
 
+  /**
+   * Generate with the strategic (smart/expensive) model. Retries once on failure.
+   *
+   * @param {string} prompt
+   * @param {string} [systemPrompt]
+   * @returns {Promise<string>}
+   */
+  async generateStrategic(prompt, systemPrompt) {
+    return this._callWithRetry(this._strategic, prompt, systemPrompt);
+  }
+
+  /**
+   * Health check on the routine provider.
+   * @returns {Promise<boolean>}
+   */
+  async healthCheck() {
+    return this._routine.healthCheck();
+  }
+
+  /**
+   * Call provider.generate with one retry.
+   * @private
+   */
+  async _callWithRetry(provider, prompt, systemPrompt) {
     try {
-      return await this._post(body);
+      return await provider.generate(prompt, systemPrompt);
     } catch (firstErr) {
-      // Retry once
       try {
-        return await this._post(body);
+        return await provider.generate(prompt, systemPrompt);
       } catch (retryErr) {
         throw new Error(
-          `Ollama generate failed after retry: ${retryErr.message} (first error: ${firstErr.message})`
+          `LLM generate failed after retry: ${retryErr.message} (first error: ${firstErr.message})`
         );
       }
     }
   }
-
-  /**
-   * Check that the Ollama server is reachable and the configured model
-   * is available.
-   *
-   * @returns {Promise<boolean>}
-   */
-  async healthCheck() {
-    try {
-      const res = await fetch(`${this.baseUrl}/api/tags`, {
-        signal: AbortSignal.timeout(5000),
-      });
-      if (!res.ok) return false;
-      const data = await res.json();
-      const models = (data.models || []).map((m) => m.name);
-      return models.some(
-        (n) => n === this.model || n.startsWith(`${this.model}:`)
-      );
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Low-level POST to /api/generate. Returns the response text.
-   * @private
-   */
-  async _post(body) {
-    const res = await fetch(`${this.baseUrl}/api/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(this.timeoutMs),
-    });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`Ollama HTTP ${res.status}: ${text}`);
-    }
-
-    const data = await res.json();
-    return data.response ?? '';
-  }
 }
 
-module.exports = OllamaClient;
+module.exports = LLMClient;

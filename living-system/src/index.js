@@ -3,7 +3,7 @@ const path = require('path');
 const settings = require('../config/settings');
 const DocumentStore = require('./core/documents/store');
 const EventLog = require('./core/memory/event-log');
-const OllamaClient = require('./core/llm/client');
+const LLMClient = require('./core/llm/client');
 const BotManager = require('./orchestrator/bot-manager');
 const Logger = require('./orchestrator/logger');
 const ConversationLogger = require('./logging/conversation-logger');
@@ -35,11 +35,7 @@ async function main() {
   // ── 2. Initialize shared services ──
   const eventLog = new EventLog(settings.memory.eventLogSize);
 
-  const llmClient = new OllamaClient({
-    baseUrl: settings.llm.baseUrl,
-    model: settings.llm.model,
-    timeoutMs: settings.llm.timeoutMs,
-  });
+  const llmClient = new LLMClient(settings.llm);
 
   const logger = new Logger({ logDir: settings.paths.logs });
   logger.init();
@@ -50,14 +46,14 @@ async function main() {
   console.log(`  Narrative logs: ${settings.paths.logs}/narrative/`);
 
   // ── 3. Check LLM health ──
-  console.log(`\nChecking Ollama at ${settings.llm.baseUrl} (model: ${settings.llm.model})...`);
+  const routineModel = settings.llm.routine.model;
+  console.log(`\nChecking LLM provider "${settings.llm.provider}" (model: ${routineModel})...`);
   const llmOk = await llmClient.healthCheck();
   if (llmOk) {
-    console.log('  Ollama is ready.');
+    console.log('  LLM provider is ready.');
   } else {
-    console.error('  WARNING: Ollama health check failed!');
-    console.error('  Bots will idle until Ollama is available.');
-    console.error(`  Make sure Ollama is running and has model "${settings.llm.model}" pulled.`);
+    console.error('  WARNING: LLM health check failed!');
+    console.error('  Bots will idle until the LLM provider is available.');
   }
 
   // ── 4. Create BotManager ──

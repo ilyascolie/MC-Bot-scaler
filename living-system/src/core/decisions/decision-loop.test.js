@@ -79,23 +79,27 @@ function createMockBot(persona) {
 // ── Mock LLM client ────────────────────────────────────────────
 
 function createMockLLM(responseText) {
-  return {
+  const mock = {
     _calls: [],
     async generate(prompt) {
-      this._calls.push(prompt);
+      mock._calls.push(prompt);
       return responseText;
     },
   };
+  mock.generateStrategic = mock.generate;
+  return mock;
 }
 
 function createFailingLLM() {
-  return {
+  const mock = {
     _calls: [],
     async generate() {
-      this._calls.push('called');
+      mock._calls.push('called');
       throw new Error('LLM offline');
     },
   };
+  mock.generateStrategic = mock.generate;
+  return mock;
 }
 
 // ── Tests ──────────────────────────────────────────────────────

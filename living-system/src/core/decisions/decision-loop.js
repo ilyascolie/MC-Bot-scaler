@@ -32,10 +32,15 @@ async function tick(bot, store, llmClient, eventLog, hooks) {
   // 3. BUILD PROMPT
   const prompt = buildDecisionPrompt(bot, perception, store, eventLog);
 
-  // 4. CALL LLM
+  // 4. CALL LLM — use strategic model for complex situations
+  const useStrategic = pending.length > 0 || (bot.persona.kegan_level >= 4);
+  const generateFn = (useStrategic && llmClient.generateStrategic)
+    ? llmClient.generateStrategic.bind(llmClient)
+    : llmClient.generate.bind(llmClient);
+
   let rawText;
   try {
-    rawText = await llmClient.generate(prompt);
+    rawText = await generateFn(prompt);
   } catch (err) {
     eventLog.push(botId, {
       type: 'error',
