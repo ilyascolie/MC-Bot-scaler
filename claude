@@ -1,0 +1,66 @@
+# CLAUDE.md — Living System
+
+## What This Is
+
+An agent orchestration system that spawns LLM-powered NPCs 
+into Minecraft (and eventually other games). Each NPC has a 
+fixed personality (Kegan developmental level, honesty, 
+agreeableness, risk tolerance, social drive). NPCs perceive 
+the game world, talk to each other, form agreements, develop 
+norms and institutions, and evolve culture — all through 
+LLM-mediated conversation and a persistent document hierarchy.
+
+The system is game-agnostic at its core. Game-specific 
+behavior lives in adapter modules. The first adapter is 
+for vanilla Minecraft via Mineflayer.
+
+## Architecture
+
+### Core (game-agnostic)
+- **Documents**: Universal data structure for all social 
+  artifacts (plans, agreements, norms, roles, institutions). 
+  SQLite-backed. Every document has: id, type, scope, parent, 
+  signatories, body (natural language), revision history.
+- **Personality**: JSON configs with Kegan level (1-5), 
+  honesty (0-1), agreeableness (0-1), risk tolerance, 
+  social drive, self-awareness. Fixed at spawn.
+- **LLM Integration**: Local Ollama by default. Prompt 
+  built by walking the document tree (institutions → norms 
+  → roles → agreements → plans). Response parsed into: 
+  action, speech, internal thought, propose document, 
+  challenge document.
+- **Trust**: Per-entity trust scores updated by observation. 
+  Social enforcement, not mechanical.
+- **Decision Loop**: perceive → build prompt → LLM call → 
+  parse → execute action + speech + proposals.
+
+### Adapters (game-specific)  
+Each adapter implements:
+- connection: how to connect a bot to the game
+- perception: how to read game state
+- skills: atomic actions (mine, attack, move, speak)
+- abilities: composed skill chains (forage, guard, build)
+- meaning: what game objects/events mean to an agent
+
+### Key Design Principles
+- Core knows nothing about Minecraft or any specific game
+- Documents are the universal interface between all layers
+- The LLM prompt is constructed by walking the document tree
+- Personality affects reasoning style, not just dialogue flavor
+- Honesty creates a gap between speech and internal thought
+- Trust is the enforcement mechanism for agreements
+- The system is designed for 150+ concurrent agents
+- Local inference (Ollama/vLLM) is the primary LLM path
+
+## Tech Stack
+- Node.js (ES modules or CommonJS, be consistent)
+- Mineflayer + plugins (pathfinder, pvp, collectblock)
+- better-sqlite3 for document store
+- Ollama for local LLM inference
+- Docker for Minecraft server
+
+## Code Style
+- Clear JSDoc comments on all exported functions
+- Async/await, no callback hell
+- Errors logged and handled gracefully, never crash the process
+- Each module should be independently testable
