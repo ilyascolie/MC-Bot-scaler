@@ -7,6 +7,8 @@
  *   internal: "What I actually think"
  *   propose: type | scope | body text
  *   challenge: document_id | reason
+ *   sign: document_id
+ *   reject: document_id
  *
  * @typedef {object} DecisionResult
  * @property {{ability: string, params: string[]}|null} action
@@ -14,6 +16,8 @@
  * @property {string|null}                               internal
  * @property {{type: string, scope: string, body: string}|null} propose
  * @property {{documentId: string, reason: string}|null} challenge
+ * @property {string|null}                               sign    — document id to sign
+ * @property {string|null}                               reject  — document id to reject
  */
 
 // ── field extractors ────────────────────────────────────────
@@ -109,6 +113,8 @@ function parseResponse(rawText) {
   const internalRaw  = extractField(rawText, 'internal');
   const proposeRaw   = extractField(rawText, 'propose');
   const challengeRaw = extractField(rawText, 'challenge');
+  const signRaw      = extractField(rawText, 'sign');
+  const rejectRaw    = extractField(rawText, 'reject');
 
   return {
     action:    actionRaw    ? parseAction(actionRaw)      : null,
@@ -116,6 +122,8 @@ function parseResponse(rawText) {
     internal:  internalRaw  ? internalRaw.replace(/^"|"$/g, '').trim() : null,
     propose:   proposeRaw   ? parsePropose(proposeRaw)     : null,
     challenge: challengeRaw ? parseChallenge(challengeRaw) : null,
+    sign:      signRaw      ? signRaw.trim()               : null,
+    reject:    rejectRaw    ? rejectRaw.trim()             : null,
   };
 }
 
@@ -125,7 +133,7 @@ function parseResponse(rawText) {
  * @returns {boolean}
  */
 function isValid(decision) {
-  return !!(decision.action || decision.speech || decision.propose || decision.challenge);
+  return !!(decision.action || decision.speech || decision.propose || decision.challenge || decision.sign || decision.reject);
 }
 
 module.exports = { parseResponse, isValid };

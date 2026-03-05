@@ -1,81 +1,248 @@
-const { buildPrompt, buildSystemPrompt } = require('../llm/prompt-builder');
-const { parseResponse } = require('../llm/response-parser');
+const { buildDecisionPrompt } = require('../llm/prompt-builder');
+const { parseResponse, isValid } = require('../llm/response-parser');
 
 /**
- * DecisionLoop — the core perceive → prompt → call → parse → execute cycle.
+ * Run one perceive → prompt → call → parse → execute cycle for a bot.
  *
- * This is the heartbeat of each bot. On every tick:
- *   1. perceive  — ask the adapter for current game state
- *   2. prompt    — build the full LLM prompt from all context
- *   3. call      — send the prompt to the LLM
- *   4. parse     — extract structured decision from LLM response
- *   5. execute   — tell the adapter to perform the chosen action
- *
- * The loop is game-agnostic: it depends on AdapterInterface, not Minecraft.
+ * @param {import('../../bots/bot')} bot
+ * @param {import('../documents/store')} store
+ * @param {import('../llm/client')} llmClient
+ * @param {import('../memory/event-log')} eventLog
+ * @returns {Promise<import('../llm/response-parser').DecisionResult|null>}
  */
+async function tick(bot, store, llmClient, eventLog) {
+  const botId = bot.persona.id;
 
-class DecisionLoop {
-  /**
-   * @param {object} deps
-   * @param {import('../../adapters/adapter-interface')} deps.adapter
-   * @param {import('../llm/client')}                    deps.llmClient
-   * @param {import('../documents/store')}               deps.documentStore
-   * @param {import('../memory/trust')}                  deps.trustTracker
-   * @param {import('../memory/event-log')}              deps.eventLog
-   * @param {import('../personality/persona').PersonaData} deps.persona
-   * @param {number} [deps.tickMs=10000] — milliseconds between ticks
-   */
-  constructor({ adapter, llmClient, documentStore, trustTracker, eventLog, persona, tickMs = 10000 }) {
-    this.adapter = adapter;
-    this.llmClient = llmClient;
-    this.documentStore = documentStore;
-    this.trustTracker = trustTracker;
-    this.eventLog = eventLog;
-    this.persona = persona;
-    this.tickMs = tickMs;
+  // 1. PERCEIVE
+  const perception = bot.perceive();
 
-    /** @type {object|null} bot handle from adapter.connect() */
-    this.bot = null;
-    /** @type {NodeJS.Timeout|null} */
-    this.timer = null;
-    this.running = false;
+  // 2. CHECK PENDING PROPOSALS — inject into perception so the prompt mentions them
+  const pending = store.getPendingProposals(botId);
+  if (pending.length > 0) {
+    const lines = pending.map(
+      (d) => `[PENDING ${d.type.toUpperCase()}/${d.scope}] (id: ${d.id}) ${d.body}`
+    );
+    perception.pendingProposals = lines;
   }
 
-  /**
-   * Connect the bot and start the decision loop.
-   * @returns {Promise<void>}
-   */
-  async start() {
-    // TODO: call adapter.connect(persona), store bot handle
-    // TODO: set up interval timer that calls tick()
-    throw new Error('DecisionLoop.start() not implemented');
+  // 3. BUILD PROMPT
+  const prompt = buildDecisionPrompt(bot, perception, store, eventLog);
+
+  // 4. CALL LLM
+  let rawText;
+  try {
+    rawText = await llmClient.generate(prompt);
+  } catch (err) {
+    eventLog.push(botId, {
+      type: 'error',
+      summary: `LLM call failed: ${err.message}`,
+    });
+    // Fallback: idle
+    try { await bot.executeAction({ ability: 'IDLE', params: [] }); } catch (_) {}
+    return null;
   }
 
-  /**
-   * Execute one perceive → prompt → call → parse → execute cycle.
-   * @returns {Promise<void>}
-   */
-  async tick() {
-    // TODO: 1. const perception = await adapter.perceive(bot)
-    // TODO: 2. gather trust scores, recent events, documents
-    // TODO: 3. const prompt = buildPrompt({ persona, perception, ... })
-    // TODO: 4. const response = await llmClient.generate({ prompt })
-    // TODO: 5. const decision = parseResponse(response.text)
-    // TODO: 6. await adapter.execute(bot, decision.action)
-    // TODO: 7. if decision.speech, await adapter.speak(...)
-    // TODO: 8. log event to eventLog
-    // TODO: 9. if decision.journalEntry, persist document
-    throw new Error('DecisionLoop.tick() not implemented');
+  // 5. PARSE RESPONSE
+  const decision = parseResponse(rawText);
+
+  if (!isValid(decision)) {
+    eventLog.push(botId, {
+      type: 'decision',
+      summary: 'LLM returned no actionable response — idling',
+    });
+    try { await bot.executeAction({ ability: 'IDLE', params: [] }); } catch (_) {}
+    return decision;
   }
 
-  /**
-   * Stop the loop and disconnect.
-   * @returns {Promise<void>}
-   */
-  async stop() {
-    // TODO: clear interval, call adapter.disconnect(bot)
-    throw new Error('DecisionLoop.stop() not implemented');
+  // 6. EXECUTE
+
+  // 6a. Action
+  if (decision.action) {
+    try {
+      await bot.executeAction(decision.action);
+      eventLog.push(botId, {
+        type: 'action',
+        summary: `Executed ${decision.action.ability}(${decision.action.params.join(', ')})`,
+      });
+    } catch (err) {
+      eventLog.push(botId, {
+        type: 'error',
+        summary: `Action ${decision.action.ability} failed: ${err.message}`,
+      });
+    }
   }
+
+  // 6b. Speech
+  if (decision.speech) {
+    try {
+      bot.speak(decision.speech.text, decision.speech.target);
+      eventLog.push(botId, {
+        type: 'chat',
+        summary: `Said: "${decision.speech.text}"${decision.speech.target ? ` → ${decision.speech.target}` : ''}`,
+      });
+    } catch (err) {
+      eventLog.push(botId, {
+        type: 'error',
+        summary: `Speech failed: ${err.message}`,
+      });
+    }
+  }
+
+  // 6c. Internal thought — log only
+  if (decision.internal) {
+    eventLog.push(botId, {
+      type: 'decision',
+      summary: `Thought: "${decision.internal}"`,
+    });
+  }
+
+  // 6d. Propose a new document
+  if (decision.propose) {
+    try {
+      const doc = store.proposeDocument({
+        type: decision.propose.type,
+        scope: decision.propose.scope,
+        body: decision.propose.body,
+        createdBy: botId,
+        createdAt: Date.now(),
+        awaiting: [], // caller/orchestrator can fill in actual targets later
+      });
+      eventLog.push(botId, {
+        type: 'decision',
+        summary: `Proposed ${doc.type}/${doc.scope}: ${doc.body.slice(0, 80)}`,
+      });
+    } catch (err) {
+      eventLog.push(botId, {
+        type: 'error',
+        summary: `Propose failed: ${err.message}`,
+      });
+    }
+  }
+
+  // 6e. Challenge a document
+  if (decision.challenge) {
+    try {
+      store.challengeDocument(
+        decision.challenge.documentId,
+        botId,
+        decision.challenge.reason,
+        Date.now()
+      );
+      eventLog.push(botId, {
+        type: 'decision',
+        summary: `Challenged document ${decision.challenge.documentId}: ${decision.challenge.reason}`,
+      });
+      // Trust: challenging costs trust with the document's creator
+      const challenged = store._getDoc ? store._getDoc.get(decision.challenge.documentId) : null;
+      if (challenged && challenged.created_by && challenged.created_by !== botId) {
+        store.updateTrust(botId, challenged.created_by, -2, Date.now());
+      }
+    } catch (err) {
+      eventLog.push(botId, {
+        type: 'error',
+        summary: `Challenge failed: ${err.message}`,
+      });
+    }
+  }
+
+  // 6f. Sign a document
+  if (decision.sign) {
+    try {
+      const signed = store.signDocument(decision.sign, botId, Date.now());
+      if (signed) {
+        eventLog.push(botId, {
+          type: 'decision',
+          summary: `Signed document ${decision.sign}`,
+        });
+        // Trust: signing boosts trust with creator
+        const doc = store._getDoc ? store._getDoc.get(decision.sign) : null;
+        if (doc && doc.created_by && doc.created_by !== botId) {
+          store.updateTrust(botId, doc.created_by, 5, Date.now());
+        }
+      }
+    } catch (err) {
+      eventLog.push(botId, {
+        type: 'error',
+        summary: `Sign failed: ${err.message}`,
+      });
+    }
+  }
+
+  // 6g. Reject a document
+  if (decision.reject) {
+    try {
+      store.removeFromAwaiting(decision.reject, botId);
+      eventLog.push(botId, {
+        type: 'decision',
+        summary: `Rejected document ${decision.reject}`,
+      });
+      // Trust: rejecting slightly lowers trust with creator
+      const doc = store._getDoc ? store._getDoc.get(decision.reject) : null;
+      if (doc && doc.created_by && doc.created_by !== botId) {
+        store.updateTrust(botId, doc.created_by, -2, Date.now());
+      }
+    } catch (err) {
+      eventLog.push(botId, {
+        type: 'error',
+        summary: `Reject failed: ${err.message}`,
+      });
+    }
+  }
+
+  // 7. LOG — summary event for the overall tick
+  eventLog.push(botId, {
+    type: 'decision',
+    summary: `Tick complete — action: ${decision.action?.ability || 'none'}, speech: ${decision.speech ? 'yes' : 'no'}`,
+  });
+
+  // 8. UPDATE TRUST from perception cues
+  if (perception.recentChat && perception.recentChat.length > 0) {
+    for (const line of perception.recentChat) {
+      // Match "<Name> ..." chat lines
+      const m = line.match(/^<(\w+)>/);
+      if (m && m[1].toLowerCase() !== botId.toLowerCase()) {
+        // Someone spoke to/near us → small trust bump
+        store.updateTrust(botId, m[1].toLowerCase(), 1, Date.now());
+      }
+    }
+  }
+
+  return decision;
 }
 
-module.exports = DecisionLoop;
+/**
+ * Start the decision loop for a bot.
+ *
+ * @param {import('../../bots/bot')} bot — connected Bot instance
+ * @param {import('../documents/store')} store — DocumentStore instance
+ * @param {object} settings
+ * @param {import('../llm/client')} settings.llmClient — OllamaClient instance
+ * @param {import('../memory/event-log')} settings.eventLog — EventLog instance
+ * @param {number} [settings.tickMs=5000] — milliseconds between ticks
+ * @returns {NodeJS.Timeout} — interval id (pass to clearInterval to stop)
+ */
+function startDecisionLoop(bot, store, { llmClient, eventLog, tickMs = 5000 }) {
+  let running = false;
+
+  const intervalId = setInterval(async () => {
+    // Guard: skip if the previous tick is still running or bot is dead
+    if (running) return;
+    if (!bot.isAlive()) return;
+
+    running = true;
+    try {
+      await tick(bot, store, llmClient, eventLog);
+    } catch (err) {
+      eventLog.push(bot.persona.id, {
+        type: 'error',
+        summary: `Tick crashed: ${err.message}`,
+      });
+    } finally {
+      running = false;
+    }
+  }, tickMs);
+
+  return intervalId;
+}
+
+module.exports = { startDecisionLoop, tick };

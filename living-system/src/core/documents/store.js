@@ -89,6 +89,10 @@ class DocumentStore {
       INSERT OR IGNORE INTO document_dependencies (document_id, depends_on_id)
       VALUES (?, ?)
     `);
+
+    this._getPendingForBot = this.db.prepare(`
+      SELECT * FROM documents WHERE alive = 1 AND awaiting IS NOT NULL AND awaiting != '[]'
+    `);
   }
 
   // ─── Documents ────────────────────────────────────────────
@@ -255,6 +259,39 @@ class DocumentStore {
    */
   killDocument(docId) {
     this._killDoc.run(docId);
+  }
+
+  /**
+   * Get all alive documents where botId is in the awaiting list
+   * (proposals that need this bot's signature).
+   *
+   * @param {string} botId
+   * @returns {Document[]}
+   */
+  getPendingProposals(botId) {
+    const rows = this._getPendingForBot.all();
+    return rows
+      .filter((row) => {
+        const awaiting = row.awaiting ? JSON.parse(row.awaiting) : [];
+        return awaiting.includes(botId);
+      })
+      .map(Document.fromRow);
+  }
+
+  /**
+   * Remove a bot from a document's awaiting list without signing.
+   *
+   * @param {string} docId
+   * @param {string} botId
+   */
+  removeFromAwaiting(docId, botId) {
+    const row = this._getDoc.get(docId);
+    if (!row || !row.awaiting) return;
+    const awaiting = JSON.parse(row.awaiting).filter((id) => id !== botId);
+    this._updateAwaiting.run(
+      awaiting.length > 0 ? JSON.stringify(awaiting) : null,
+      docId
+    );
   }
 
   // ─── Trust ────────────────────────────────────────────────
