@@ -1,61 +1,98 @@
 /**
- * LLMClient — Ollama API client.
+ * OllamaClient — POST to /api/generate on a local or remote Ollama instance.
  *
- * Sends POST requests to /api/generate on a local (or remote) Ollama
- * instance. Handles retries, timeouts, and streaming vs. non-streaming
- * responses.
+ * Usage:
+ *   const client = new OllamaClient({ baseUrl, model });
+ *   const text = await client.generate(prompt, systemPrompt);
  */
 
-/**
- * @typedef {object} LLMRequest
- * @property {string} model    — Ollama model name (e.g. 'llama3')
- * @property {string} prompt   — the full prompt text
- * @property {string} [system] — optional system prompt
- * @property {object} [options] — Ollama generation options (temperature, etc.)
- */
-
-/**
- * @typedef {object} LLMResponse
- * @property {string}  text       — generated text
- * @property {number}  totalMs    — total generation time in ms
- * @property {boolean} done       — whether generation is complete
- * @property {object}  [raw]      — raw Ollama response for debugging
- */
-
-class LLMClient {
+class OllamaClient {
   /**
-   * @param {object} config
-   * @param {string} config.baseUrl — Ollama base URL (e.g. 'http://localhost:11434')
-   * @param {string} config.model   — default model name
-   * @param {number} [config.timeoutMs=60000] — request timeout
+   * @param {object}  config
+   * @param {string}  config.baseUrl      — e.g. 'http://localhost:11434'
+   * @param {string}  config.model        — Ollama model name (e.g. 'llama3')
+   * @param {number}  [config.temperature=0.7]
+   * @param {number}  [config.timeoutMs=30000]
    */
-  constructor({ baseUrl, model, timeoutMs = 60000 }) {
-    this.baseUrl = baseUrl;
+  constructor({ baseUrl, model, temperature = 0.7, timeoutMs = 30000 }) {
+    this.baseUrl = baseUrl.replace(/\/+$/, '');
     this.model = model;
+    this.temperature = temperature;
     this.timeoutMs = timeoutMs;
   }
 
   /**
-   * Send a generation request to Ollama and return the full response.
+   * Send a generation request. Retries once on failure.
    *
-   * @param {LLMRequest} request
-   * @returns {Promise<LLMResponse>}
+   * @param {string}  prompt       — user/main prompt text
+   * @param {string}  [systemPrompt] — system prompt (persona, context)
+   * @returns {Promise<string>} — raw generated text
    */
-  async generate(request) {
-    // TODO: POST to ${this.baseUrl}/api/generate with JSON body
-    // TODO: handle timeout, parse JSON response, wrap in LLMResponse
-    throw new Error('LLMClient.generate() not implemented');
+  async generate(prompt, systemPrompt) {
+    const body = {
+      model: this.model,
+      prompt,
+      stream: false,
+      options: { temperature: this.temperature },
+    };
+    if (systemPrompt) body.system = systemPrompt;
+
+    try {
+      return await this._post(body);
+    } catch (firstErr) {
+      // Retry once
+      try {
+        return await this._post(body);
+      } catch (retryErr) {
+        throw new Error(
+          `Ollama generate failed after retry: ${retryErr.message} (first error: ${firstErr.message})`
+        );
+      }
+    }
   }
 
   /**
-   * Check whether the Ollama server is reachable and the model is loaded.
+   * Check that the Ollama server is reachable and the configured model
+   * is available.
    *
    * @returns {Promise<boolean>}
    */
   async healthCheck() {
-    // TODO: GET ${this.baseUrl}/api/tags, check model is present
-    throw new Error('LLMClient.healthCheck() not implemented');
+    try {
+      const res = await fetch(`${this.baseUrl}/api/tags`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) return false;
+      const data = await res.json();
+      const models = (data.models || []).map((m) => m.name);
+      return models.some(
+        (n) => n === this.model || n.startsWith(`${this.model}:`)
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Low-level POST to /api/generate. Returns the response text.
+   * @private
+   */
+  async _post(body) {
+    const res = await fetch(`${this.baseUrl}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(this.timeoutMs),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`Ollama HTTP ${res.status}: ${text}`);
+    }
+
+    const data = await res.json();
+    return data.response ?? '';
   }
 }
 
-module.exports = LLMClient;
+module.exports = OllamaClient;
