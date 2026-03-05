@@ -32,8 +32,10 @@ class EventLog {
    * @returns {void}
    */
   push(botName, event) {
-    // TODO: append to ring buffer, evict oldest if over maxSize
-    throw new Error('EventLog.push() not implemented');
+    if (!this.logs.has(botName)) this.logs.set(botName, []);
+    const buf = this.logs.get(botName);
+    buf.push({ ...event, timestamp: event.timestamp ?? Date.now() });
+    if (buf.length > this.maxSize) buf.shift();
   }
 
   /**
@@ -44,8 +46,9 @@ class EventLog {
    * @returns {Event[]} — newest first
    */
   recent(botName, count = 20) {
-    // TODO: slice from end of buffer
-    throw new Error('EventLog.recent() not implemented');
+    const buf = this.logs.get(botName);
+    if (!buf || buf.length === 0) return [];
+    return buf.slice(-count).reverse();
   }
 
   /**
@@ -55,8 +58,7 @@ class EventLog {
    * @returns {void}
    */
   clear(botName) {
-    // TODO: delete from map
-    throw new Error('EventLog.clear() not implemented');
+    this.logs.delete(botName);
   }
 }
 
