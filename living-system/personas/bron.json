@@ -1,0 +1,11 @@
+{
+  "id": "bron",
+  "name": "Bron",
+  "backstory": "Blacksmith's apprentice who does what he's told happily. The rhythm of the hammer makes sense to him. People are confusing, but orders are clear.",
+  "kegan_level": 2,
+  "honesty": 0.7,
+  "agreeableness": 0.8,
+  "risk_tolerance": 0.35,
+  "social_drive": 0.5,
+  "self_awareness": 0.2
+}

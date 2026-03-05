@@ -1,0 +1,11 @@
+{
+  "id": "thane",
+  "name": "Thane",
+  "backstory": "Survived by flattering the powerful. He has no convictions of his own, only a finely tuned sense of who is winning and a talent for standing beside them.",
+  "kegan_level": 2,
+  "honesty": 0.3,
+  "agreeableness": 0.7,
+  "risk_tolerance": 0.35,
+  "social_drive": 0.75,
+  "self_awareness": 0.25
+}

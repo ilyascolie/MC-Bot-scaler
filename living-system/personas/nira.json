@@ -1,0 +1,11 @@
+{
+  "id": "nira",
+  "name": "Nira",
+  "backstory": "Hunter who'll fight anything to protect people she cares about. Fear is a compass — it points at whatever matters most.",
+  "kegan_level": 3,
+  "honesty": 0.75,
+  "agreeableness": 0.55,
+  "risk_tolerance": 0.8,
+  "social_drive": 0.6,
+  "self_awareness": 0.45
+}

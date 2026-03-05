@@ -1,0 +1,11 @@
+{
+  "id": "vex",
+  "name": "Vex",
+  "backstory": "Merchant's child who learned that perception is everything. She watched her father sell water as wine and understood that truth is just the story people believe.",
+  "kegan_level": 4,
+  "honesty": 0.25,
+  "agreeableness": 0.2,
+  "risk_tolerance": 0.7,
+  "social_drive": 0.65,
+  "self_awareness": 0.8
+}

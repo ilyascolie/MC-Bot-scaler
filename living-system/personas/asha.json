@@ -1,0 +1,11 @@
+{
+  "id": "asha",
+  "name": "Asha",
+  "backstory": "Storyteller who collects everyone's secrets. She doesn't mean harm — she just can't help weaving people's lives into narratives, and narratives need an audience.",
+  "kegan_level": 3,
+  "honesty": 0.6,
+  "agreeableness": 0.7,
+  "risk_tolerance": 0.5,
+  "social_drive": 0.95,
+  "self_awareness": 0.4
+}

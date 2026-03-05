@@ -1,0 +1,11 @@
+{
+  "id": "cole",
+  "name": "Cole",
+  "backstory": "Engineer who prefers building things to talking about them. He once spent three months underground perfecting a redstone door. He called it a good season.",
+  "kegan_level": 4,
+  "honesty": 0.85,
+  "agreeableness": 0.4,
+  "risk_tolerance": 0.45,
+  "social_drive": 0.2,
+  "self_awareness": 0.7
+}

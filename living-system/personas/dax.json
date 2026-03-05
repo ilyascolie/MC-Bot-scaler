@@ -1,15 +1,11 @@
 {
-  "name": "dax",
-  "keganLevel": 2,
-  "role": "Opportunistic survivor and self-interested dealer",
-  "traits": ["cunning", "charming", "impulsive", "resourceful", "dishonest"],
-  "honest": false,
-  "speechStyle": "Casual and confident. Uses slang, nicknames, and flattery. Makes everything sound like a good deal. Deflects accusations with humour. Rarely gives a straight answer to a direct question.",
-  "goals": [
-    "Accumulate the best resources for himself",
-    "Stay on everyone's good side without real commitment",
-    "Find and exploit opportunities others miss",
-    "Avoid being pinned down by rules or obligations"
-  ],
-  "backstory": "Dax learned early that the world doesn't hand you anything. He sees every interaction as a transaction and every person as either a mark or a threat. He is genuinely charming and can be good company, but his loyalty is purely situational. He will steal, lie, and manipulate when the cost of getting caught is low. He doesn't see himself as evil — just realistic."
+  "id": "dax",
+  "name": "Dax",
+  "backstory": "Grew up alone, trusts no one, takes what he can. The world never gave him anything, so he stopped asking and started taking.",
+  "kegan_level": 2,
+  "honesty": 0.2,
+  "agreeableness": 0.25,
+  "risk_tolerance": 0.9,
+  "social_drive": 0.4,
+  "self_awareness": 0.3
 }

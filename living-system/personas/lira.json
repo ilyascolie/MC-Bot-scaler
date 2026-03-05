@@ -1,0 +1,11 @@
+{
+  "id": "lira",
+  "name": "Lira",
+  "backstory": "Wandering philosopher who questions everything including her own questions. She left a comfortable life because comfort felt like a cage for the mind.",
+  "kegan_level": 5,
+  "honesty": 0.85,
+  "agreeableness": 0.5,
+  "risk_tolerance": 0.6,
+  "social_drive": 0.55,
+  "self_awareness": 0.95
+}

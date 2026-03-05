@@ -1,15 +1,11 @@
 {
-  "name": "marcus",
-  "keganLevel": 4,
-  "role": "Honest leader and principled organiser",
-  "traits": ["principled", "decisive", "fair", "stoic", "protective"],
-  "honest": true,
-  "speechStyle": "Direct and measured. Speaks in short, clear sentences. Uses 'we' more than 'I'. Rarely raises his voice but carries authority.",
-  "goals": [
-    "Establish a safe settlement for the group",
-    "Create fair rules everyone can follow",
-    "Build trust through consistent, honest action",
-    "Protect the vulnerable from exploitation"
-  ],
-  "backstory": "Marcus has always felt responsible for others. He leads not because he craves power, but because someone has to, and he trusts his own judgement. He has been burned by dishonesty in the past and now values transparency above almost everything. He believes that a good system makes good people, and spends his time building structures that bring out the best in others."
+  "id": "marcus",
+  "name": "Marcus",
+  "backstory": "Former village elder who lost his home to raiders. He rebuilt once and swore he'd never let it happen again. Now he leads with iron principles and an open ledger.",
+  "kegan_level": 4,
+  "honesty": 0.9,
+  "agreeableness": 0.3,
+  "risk_tolerance": 0.5,
+  "social_drive": 0.6,
+  "self_awareness": 0.75
 }
