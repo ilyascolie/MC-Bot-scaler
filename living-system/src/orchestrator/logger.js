@@ -2,48 +2,67 @@ const fs = require('fs');
 const path = require('path');
 
 /**
- * Logger — conversation log + terminal dashboard.
+ * Logger — file-based logging for decisions, chat, and errors.
  *
- * Provides two functions:
- *   1. Persistent file logging (conversation, decisions, errors)
- *   2. Live terminal dashboard showing bot status at a glance
+ * Creates three log files:
+ *   - decisions.log — every bot decision each tick
+ *   - chat.log      — all speech sent and received
+ *   - errors.log    — errors and crashes
  */
 
 class Logger {
   /**
    * @param {object} opts
-   * @param {string} opts.logDir   — directory for log files
-   * @param {boolean} [opts.dashboard=true] — enable terminal dashboard
+   * @param {string} opts.logDir — directory for log files
    */
-  constructor({ logDir, dashboard = true }) {
+  constructor({ logDir }) {
     this.logDir = logDir;
-    this.dashboardEnabled = dashboard;
-    /** @type {Map<string, object>} — latest status per bot */
-    this.botStatuses = new Map();
+    this._streams = {};
   }
 
   /**
-   * Initialise log directory and files.
-   * @returns {void}
+   * Initialise log directory and open file streams.
    */
   init() {
-    // TODO: ensure logDir exists
-    // TODO: create/open log file streams
-    throw new Error('Logger.init() not implemented');
+    fs.mkdirSync(this.logDir, { recursive: true });
+
+    this._streams.decisions = fs.createWriteStream(
+      path.join(this.logDir, 'decisions.log'),
+      { flags: 'a' }
+    );
+    this._streams.chat = fs.createWriteStream(
+      path.join(this.logDir, 'chat.log'),
+      { flags: 'a' }
+    );
+    this._streams.errors = fs.createWriteStream(
+      path.join(this.logDir, 'errors.log'),
+      { flags: 'a' }
+    );
+  }
+
+  /** @returns {string} */
+  _ts() {
+    return new Date().toISOString();
   }
 
   /**
-   * Log a bot's decision and action.
+   * Log a bot's decision.
    *
    * @param {string} botName
    * @param {object} decision — parsed decision from LLM
-   * @param {object} result   — action execution result
-   * @returns {void}
    */
-  logDecision(botName, decision, result) {
-    // TODO: write timestamped entry to log file
-    // TODO: update botStatuses map
-    throw new Error('Logger.logDecision() not implemented');
+  logDecision(botName, decision) {
+    if (!this._streams.decisions) return;
+    const action = decision.action
+      ? `${decision.action.ability}(${decision.action.params.join(',')})`
+      : 'none';
+    const speech = decision.speech
+      ? `"${decision.speech.text}"${decision.speech.target ? ` -> ${decision.speech.target}` : ''}`
+      : 'none';
+    const internal = decision.internal || 'none';
+    this._streams.decisions.write(
+      `[${this._ts()}] ${botName} | action: ${action} | speech: ${speech} | thought: ${internal}\n`
+    );
   }
 
   /**
@@ -52,43 +71,49 @@ class Logger {
    * @param {string} botName
    * @param {string} direction — 'sent' | 'received'
    * @param {string} message
-   * @param {string} [other]   — other party
-   * @returns {void}
+   * @param {string} [other] — other party
    */
   logChat(botName, direction, message, other) {
-    // TODO: write to conversation log
-    throw new Error('Logger.logChat() not implemented');
+    if (!this._streams.chat) return;
+    const arrow = direction === 'sent' ? '->' : '<-';
+    const party = other ? ` ${other}` : '';
+    this._streams.chat.write(
+      `[${this._ts()}] ${botName} ${arrow}${party}: ${message}\n`
+    );
   }
 
   /**
    * Log an error.
    *
    * @param {string} botName
-   * @param {Error}  error
-   * @returns {void}
+   * @param {Error|string} error
    */
   logError(botName, error) {
-    // TODO: write to error log with stack trace
-    throw new Error('Logger.logError() not implemented');
+    if (!this._streams.errors) return;
+    const msg = error instanceof Error ? `${error.message}\n${error.stack}` : error;
+    this._streams.errors.write(
+      `[${this._ts()}] ${botName} | ${msg}\n`
+    );
   }
 
   /**
-   * Render the terminal dashboard showing all bot statuses.
-   * @returns {void}
+   * Log a general info message to decisions.log.
+   *
+   * @param {string} message
    */
-  renderDashboard() {
-    // TODO: clear terminal, print table of bot statuses
-    // TODO: show name, health, action, last decision, uptime
-    throw new Error('Logger.renderDashboard() not implemented');
+  info(message) {
+    if (!this._streams.decisions) return;
+    this._streams.decisions.write(`[${this._ts()}] INFO | ${message}\n`);
   }
 
   /**
    * Close all log file handles.
-   * @returns {void}
    */
   close() {
-    // TODO: close file streams
-    throw new Error('Logger.close() not implemented');
+    for (const stream of Object.values(this._streams)) {
+      if (stream) stream.end();
+    }
+    this._streams = {};
   }
 }
 
