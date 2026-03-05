@@ -189,6 +189,13 @@ async function tick(bot, store, llmClient, eventLog) {
     }
   }
 
+  // 6h. OBSERVE other bots and check for agreement violations
+  try {
+    checkAgreementViolations(bot, store, eventLog);
+  } catch (_) {
+    // Observation is best-effort — never crash the tick
+  }
+
   // 7. LOG — summary event for the overall tick
   eventLog.push(botId, {
     type: 'decision',
@@ -208,6 +215,127 @@ async function tick(bot, store, llmClient, eventLog) {
   }
 
   return decision;
+}
+
+// ── Agreement keywords → expected activities ─────────────────────
+// Maps keywords found in agreement bodies to activities that would
+// satisfy the commitment. If a signatory is observed doing something
+// NOT on their expected list, it's a potential violation.
+const COMMITMENT_KEYWORDS = {
+  mine:     ['mining', 'moving'],
+  mines:    ['mining', 'moving'],
+  mining:   ['mining', 'moving'],
+  dig:      ['mining', 'moving'],
+  smelt:    ['mining', 'moving', 'idle'], // smelting looks like idle/near furnace
+  smelts:   ['mining', 'moving', 'idle'],
+  build:    ['building', 'moving', 'mining'],
+  builds:   ['building', 'moving', 'mining'],
+  guard:    ['idle', 'moving', 'fighting'],
+  guards:   ['idle', 'moving', 'fighting'],
+  patrol:   ['moving'],
+  patrols:  ['moving'],
+  hunt:     ['fighting', 'moving'],
+  hunts:    ['fighting', 'moving'],
+  farm:     ['mining', 'moving', 'idle'],
+  farms:    ['mining', 'moving', 'idle'],
+  chop:     ['mining', 'moving'],
+  chops:    ['mining', 'moving'],
+  craft:    ['idle', 'moving'],
+  crafts:   ['idle', 'moving'],
+};
+
+/**
+ * Parse an agreement body to extract per-bot commitments.
+ * Looks for patterns like "X mines", "X guards", "Y smelts", etc.
+ *
+ * @param {string} body — agreement body text
+ * @returns {Map<string, string[]>} — map of lowercase bot name → expected activities
+ */
+function parseCommitments(body) {
+  const commitments = new Map();
+  const lower = body.toLowerCase();
+
+  // Match patterns like "name verb" where verb is a commitment keyword
+  for (const [keyword, activities] of Object.entries(COMMITMENT_KEYWORDS)) {
+    // Match "Name keyword" — e.g., "Marcus mines", "Sera smelts"
+    const pattern = new RegExp(`(\\w+)\\s+${keyword}\\b`, 'gi');
+    let match;
+    while ((match = pattern.exec(body)) !== null) {
+      const name = match[1].toLowerCase();
+      // Skip common words that aren't names
+      if (['i', 'we', 'they', 'who', 'that', 'will', 'should', 'must', 'can', 'the', 'and', 'or'].includes(name)) continue;
+      if (!commitments.has(name)) commitments.set(name, []);
+      for (const act of activities) {
+        if (!commitments.get(name).includes(act)) {
+          commitments.get(name).push(act);
+        }
+      }
+    }
+  }
+
+  return commitments;
+}
+
+/**
+ * Observe nearby bots and check if any are violating agreements
+ * this bot has signed with them.
+ *
+ * @param {import('../../bots/bot')} bot
+ * @param {import('../documents/store')} store
+ * @param {import('../memory/event-log')} eventLog
+ */
+function checkAgreementViolations(bot, store, eventLog) {
+  const botId = bot.persona.id;
+
+  // Get what other bots are doing
+  const observations = bot.observeOtherBots();
+  if (observations.length === 0) return;
+
+  // Build a quick lookup: lowercase name → observation
+  const obsMap = new Map();
+  for (const obs of observations) {
+    obsMap.set(obs.name.toLowerCase(), obs);
+  }
+
+  // Get this bot's agreements
+  const docs = store.getDocumentsForBot(botId);
+  const agreements = docs.filter((d) => d.type === 'agreement');
+  if (agreements.length === 0) return;
+
+  for (const agreement of agreements) {
+    const commitments = parseCommitments(agreement.body);
+    if (commitments.size === 0) continue;
+
+    // Get the other signatories of this agreement
+    const signatories = store.getSignatories(agreement.id);
+    const otherSignatories = signatories.filter((id) => id !== botId);
+
+    for (const otherBotId of otherSignatories) {
+      // Is this bot nearby and observable?
+      const obs = obsMap.get(otherBotId);
+      if (!obs) continue; // not nearby, can't observe
+
+      // Does the agreement say what this bot should be doing?
+      const expectedActivities = commitments.get(otherBotId);
+      if (!expectedActivities) continue; // no specific commitment for this bot
+
+      // Is their observed activity consistent with their commitment?
+      if (!expectedActivities.includes(obs.activity)) {
+        // Potential violation detected!
+        const summary = agreement.body.length > 60
+          ? agreement.body.slice(0, 60) + '...'
+          : agreement.body;
+
+        eventLog.push(botId, {
+          type: 'observation',
+          summary: `${obs.name} may be violating our agreement about "${summary}" — expected ${expectedActivities.join('/')}, observed ${obs.activity}`,
+        });
+
+        // Trust penalty
+        store.updateTrust(botId, otherBotId, -15, Date.now());
+      }
+    }
+  }
 }
 
 /**
@@ -245,4 +373,4 @@ function startDecisionLoop(bot, store, { llmClient, eventLog, tickMs = 5000 }) {
   return intervalId;
 }
 
-module.exports = { startDecisionLoop, tick };
+module.exports = { startDecisionLoop, tick, checkAgreementViolations, parseCommitments };

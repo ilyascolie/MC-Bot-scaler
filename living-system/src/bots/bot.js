@@ -266,6 +266,101 @@ class Bot extends EventEmitter {
     };
   }
 
+  // ─── Observation ──────────────────────────────────────────────
+
+  /**
+   * Observe what other nearby bots (players) are doing.
+   * Returns an observation for each player within 16 blocks.
+   *
+   * @typedef {object} ObservationResult
+   * @property {string}   name      — player username
+   * @property {number}   distance  — blocks away
+   * @property {string}   activity  — inferred activity: 'mining', 'building', 'fighting', 'moving', 'idle'
+   * @property {string[]} [inventory] — visible items if within 4 blocks (what they're holding)
+   * @property {string|null} talkingTo — who they recently chatted at, or null
+   *
+   * @returns {ObservationResult[]}
+   */
+  observeOtherBots() {
+    const bot = this.mineflayerBot;
+    if (!bot || !bot.entity) return [];
+
+    const results = [];
+
+    for (const entity of Object.values(bot.entities)) {
+      if (entity === bot.entity) continue;
+      if (!entity.position || !entity.username) continue; // only players
+
+      const dist = entity.position.distanceTo(bot.entity.position);
+      if (dist > 16) continue;
+
+      // Infer activity from entity state
+      let activity = 'idle';
+      try {
+        if (entity.metadata) {
+          // Check if swinging arm (mining/fighting)
+          const isSwinging = entity.swingArm || (entity.metadata[8] !== undefined && entity.metadata[8] !== 0);
+          if (isSwinging) {
+            // If targeting another entity, probably fighting
+            activity = 'fighting';
+          }
+        }
+
+        // Check velocity — if moving significantly, they're moving
+        if (entity.velocity) {
+          const speed = Math.sqrt(
+            entity.velocity.x ** 2 + entity.velocity.z ** 2
+          );
+          if (speed > 0.05) {
+            activity = 'moving';
+          }
+        }
+
+        // If they're looking down and close to blocks, might be mining
+        if (entity.pitch && entity.pitch > 0.5 && activity === 'idle') {
+          activity = 'mining';
+        }
+      } catch {
+        // Entity state can be unreliable
+      }
+
+      const obs = {
+        name: entity.username,
+        distance: Math.round(dist),
+        activity,
+        talkingTo: null,
+      };
+
+      // If close enough (<4 blocks), report what they're holding
+      if (dist < 4) {
+        try {
+          const heldItem = entity.heldItem;
+          if (heldItem) {
+            obs.inventory = [heldItem.name];
+          }
+        } catch {
+          // Not always available
+        }
+      }
+
+      // Check recent chat to see who they were talking to
+      for (const chat of this.recentChat) {
+        if (chat.sender === entity.username) {
+          // Extract target from "TargetName, message" pattern
+          const targetMatch = chat.message.match(/^(\w+),\s/);
+          if (targetMatch) {
+            obs.talkingTo = targetMatch[1];
+          }
+          break; // most recent chat only
+        }
+      }
+
+      results.push(obs);
+    }
+
+    return results;
+  }
+
   // ─── Actions ────────────────────────────────────────────────
 
   /**

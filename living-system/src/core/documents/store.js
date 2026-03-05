@@ -93,6 +93,10 @@ class DocumentStore {
     this._getPendingForBot = this.db.prepare(`
       SELECT * FROM documents WHERE alive = 1 AND awaiting IS NOT NULL AND awaiting != '[]'
     `);
+
+    this._getSignatories = this.db.prepare(`
+      SELECT bot_id FROM signatories WHERE document_id = ?
+    `);
   }
 
   // ─── Documents ────────────────────────────────────────────
@@ -335,6 +339,16 @@ class DocumentStore {
       map[row.to_bot] = row.score;
     }
     return map;
+  }
+
+  /**
+   * Get all bot ids who have signed a document.
+   *
+   * @param {string} docId
+   * @returns {string[]}
+   */
+  getSignatories(docId) {
+    return this._getSignatories.all(docId).map((r) => r.bot_id);
   }
 
   // ─── Dependencies ─────────────────────────────────────────

@@ -1,6 +1,6 @@
 const path = require('path');
 const fs = require('fs');
-const { tick } = require('./decision-loop');
+const { tick, checkAgreementViolations, parseCommitments } = require('./decision-loop');
 const DocumentStore = require('../documents/store');
 const EventLog = require('../memory/event-log');
 const { loadPersona } = require('../personality/persona');
@@ -49,6 +49,10 @@ function createMockBot(persona) {
         recentChat: ['<Sera> Hello Marcus!'],
       };
     },
+
+    // Default: no other bots observed. Tests can override this.
+    _observations: [],
+    observeOtherBots() { return this._observations; },
 
     async executeAction(action) {
       actions.push(action);
@@ -376,6 +380,169 @@ async function main() {
     const pending = store.getPendingProposals('marcus');
     assert(pending.length === 1, 'pending proposal exists for marcus');
     assert(pending[0].body.includes('wheat'), 'pending proposal has correct body');
+
+    store.close();
+    fs.unlinkSync(DB_PATH);
+  }
+
+  // ── Test 10: parseCommitments extracts per-bot activities ───
+
+  {
+    console.log('\nTest 10: parseCommitments');
+    const c1 = parseCommitments('Marcus mines iron, Sera smelts it');
+    assert(c1.has('marcus'), 'marcus has commitments');
+    assert(c1.get('marcus').includes('mining'), 'marcus expected to mine');
+    assert(c1.has('sera'), 'sera has commitments');
+    assert(c1.get('sera').includes('idle'), 'sera expected idle (smelting)');
+
+    const c2 = parseCommitments('Dax guards the perimeter, Nira hunts for food');
+    assert(c2.has('dax'), 'dax has commitments');
+    assert(c2.get('dax').includes('fighting'), 'dax expected fighting (guard)');
+    assert(c2.has('nira'), 'nira has commitments');
+    assert(c2.get('nira').includes('fighting'), 'nira expected fighting (hunt)');
+
+    const c3 = parseCommitments('We should all cooperate');
+    assert(c3.size === 0, 'no commitments from vague text');
+  }
+
+  // ── Test 11: Violation detection — flagged when observed idle ──
+
+  {
+    console.log('\nTest 11: Agreement violation detection');
+    const store = new DocumentStore(DB_PATH);
+    store.init();
+    const eventLog = new EventLog();
+    const bot = createMockBot(persona);
+
+    // Create an agreement: Sera mines, Marcus builds
+    const agreement = store.createDocument({
+      type: 'agreement',
+      scope: 'pair',
+      body: 'Sera mines iron, Marcus builds walls.',
+      createdBy: 'marcus',
+      createdAt: 500,
+    });
+    store.signDocument(agreement.id, 'sera', 501);
+
+    // Sera is observed idle (should be mining)
+    bot._observations = [
+      { name: 'sera', distance: 8, activity: 'idle', talkingTo: null },
+    ];
+
+    checkAgreementViolations(bot, store, eventLog);
+
+    // Should flag a violation
+    const events = eventLog.recent('marcus', 20);
+    assert(events.some((e) => e.summary.includes('violating')), 'violation event logged');
+    assert(events.some((e) => e.summary.includes('sera')), 'violation mentions sera');
+
+    // Trust should decrease
+    const trust = store.getTrustScore('marcus', 'sera');
+    assert(trust === -15, `trust decreased by 15 (got ${trust})`);
+
+    store.close();
+    fs.unlinkSync(DB_PATH);
+  }
+
+  // ── Test 12: No violation when observed doing expected activity ──
+
+  {
+    console.log('\nTest 12: No false violation for expected activity');
+    const store = new DocumentStore(DB_PATH);
+    store.init();
+    const eventLog = new EventLog();
+    const bot = createMockBot(persona);
+
+    const agreement = store.createDocument({
+      type: 'agreement',
+      scope: 'pair',
+      body: 'Sera mines iron, Marcus builds walls.',
+      createdBy: 'marcus',
+      createdAt: 600,
+    });
+    store.signDocument(agreement.id, 'sera', 601);
+
+    // Sera is observed mining (as expected)
+    bot._observations = [
+      { name: 'sera', distance: 10, activity: 'mining', talkingTo: null },
+    ];
+
+    checkAgreementViolations(bot, store, eventLog);
+
+    // Should NOT flag a violation
+    const events = eventLog.recent('marcus', 20);
+    assert(!events.some((e) => e.summary.includes('violating')), 'no violation logged');
+
+    // Trust should not decrease
+    const trust = store.getTrustScore('marcus', 'sera');
+    assert(trust === 0, `trust unchanged (got ${trust})`);
+
+    store.close();
+    fs.unlinkSync(DB_PATH);
+  }
+
+  // ── Test 13: No violation for bots not in agreement ────────
+
+  {
+    console.log('\nTest 13: No violation for uninvolved bots');
+    const store = new DocumentStore(DB_PATH);
+    store.init();
+    const eventLog = new EventLog();
+    const bot = createMockBot(persona);
+
+    const agreement = store.createDocument({
+      type: 'agreement',
+      scope: 'pair',
+      body: 'Sera mines iron, Marcus builds walls.',
+      createdBy: 'marcus',
+      createdAt: 700,
+    });
+    store.signDocument(agreement.id, 'sera', 701);
+
+    // Dax is observed idle — but Dax isn't part of this agreement
+    bot._observations = [
+      { name: 'dax', distance: 5, activity: 'idle', talkingTo: null },
+    ];
+
+    checkAgreementViolations(bot, store, eventLog);
+
+    const events = eventLog.recent('marcus', 20);
+    assert(!events.some((e) => e.summary.includes('violating')), 'no violation for non-signatory');
+
+    store.close();
+    fs.unlinkSync(DB_PATH);
+  }
+
+  // ── Test 14: Violation runs during tick without crashing ────
+
+  {
+    console.log('\nTest 14: Observation integrated into tick');
+    const store = new DocumentStore(DB_PATH);
+    store.init();
+    const eventLog = new EventLog();
+    const bot = createMockBot(persona);
+
+    const agreement = store.createDocument({
+      type: 'agreement',
+      scope: 'pair',
+      body: 'Sera guards the base, Marcus chops trees.',
+      createdBy: 'marcus',
+      createdAt: 800,
+    });
+    store.signDocument(agreement.id, 'sera', 801);
+
+    // Sera is observed idle (should be guarding = idle/moving/fighting, so idle IS valid!)
+    bot._observations = [
+      { name: 'sera', distance: 6, activity: 'idle', talkingTo: null },
+    ];
+
+    const llm = createMockLLM('action: CHOP_TREES');
+    await tick(bot, store, llm, eventLog);
+
+    // guarding allows idle, so no violation
+    const events = eventLog.recent('marcus', 30);
+    assert(!events.some((e) => e.summary.includes('violating')), 'guarding-idle not flagged');
+    assert(events.some((e) => e.summary.includes('CHOP_TREES')), 'tick still completed normally');
 
     store.close();
     fs.unlinkSync(DB_PATH);
