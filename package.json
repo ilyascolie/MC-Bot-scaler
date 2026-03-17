@@ -1,0 +1,21 @@
+{
+  "name": "living-system",
+  "version": "0.1.0",
+  "description": "LLM-powered Minecraft bot civilization with emergent social behavior",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test tests/",
+    "server": "docker compose up -d"
+  },
+  "dependencies": {
+    "mineflayer": "^4.14.0",
+    "mineflayer-pathfinder": "^2.4.5",
+    "mineflayer-pvp": "^1.3.2",
+    "mineflayer-collectblock": "^1.4.1",
+    "better-sqlite3": "^11.0.0",
+    "minecraft-data": "^3.64.0",
+    "prismarine-viewer": "^1.27.0",
+    "vec3": "^0.1.10"
+  }
+}

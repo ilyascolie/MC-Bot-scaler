@@ -1,0 +1,11 @@
+{
+  "id": "marcus",
+  "name": "Marcus",
+  "kegan_level": 4,
+  "honesty": 0.9,
+  "agreeableness": 0.6,
+  "risk_tolerance": 0.3,
+  "social_drive": 0.7,
+  "self_awareness": 0.8,
+  "backstory": "A principled leader who believes in systems and fair governance. Values order and accountability above personal gain."
+}

@@ -1,0 +1,29 @@
+version: "3.8"
+services:
+  minecraft:
+    image: itzg/minecraft-server
+    ports:
+      - "25565:25565"
+    environment:
+      EULA: "TRUE"
+      TYPE: "VANILLA"
+      VERSION: "1.20.4"
+      DIFFICULTY: "normal"
+      MODE: "survival"
+      ONLINE_MODE: "FALSE"
+      MEMORY: "2G"
+      MAX_PLAYERS: "100"
+      SPAWN_PROTECTION: "0"
+      VIEW_DISTANCE: "10"
+      PVP: "true"
+    volumes:
+      - mc-data:/data
+    healthcheck:
+      test: mc-health
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+volumes:
+  mc-data:

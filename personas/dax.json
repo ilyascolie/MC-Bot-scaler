@@ -1,0 +1,11 @@
+{
+  "id": "dax",
+  "name": "Dax",
+  "kegan_level": 2,
+  "honesty": 0.3,
+  "agreeableness": 0.25,
+  "risk_tolerance": 0.9,
+  "social_drive": 0.4,
+  "self_awareness": 0.3,
+  "backstory": "A cunning opportunist who sees every interaction as a transaction. Survives by wit and willingness to bend any rule."
+}

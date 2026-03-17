@@ -1,0 +1,11 @@
+{
+  "id": "cade",
+  "name": "Cade",
+  "kegan_level": 3,
+  "honesty": 0.65,
+  "agreeableness": 0.55,
+  "risk_tolerance": 0.6,
+  "social_drive": 0.7,
+  "self_awareness": 0.5,
+  "backstory": "A curious explorer drawn to novelty. Forms bonds quickly but may not maintain them. Adapts to whatever group needs."
+}

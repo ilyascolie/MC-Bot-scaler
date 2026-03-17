@@ -1,0 +1,11 @@
+{
+  "id": "lira",
+  "name": "Lira",
+  "kegan_level": 5,
+  "honesty": 0.95,
+  "agreeableness": 0.5,
+  "risk_tolerance": 0.5,
+  "social_drive": 0.8,
+  "self_awareness": 0.95,
+  "backstory": "A philosophical observer who sees patterns others miss. Questions assumptions and holds paradoxes without needing resolution."
+}
