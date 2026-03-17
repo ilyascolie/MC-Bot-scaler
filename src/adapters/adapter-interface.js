@@ -1,27 +1,28 @@
 'use strict';
 
 /**
- * Base class for game adapters. All game-specific code lives in adapters.
- * Core knows nothing about any specific game.
+ * Base adapter interface that all game adapters must implement.
  */
 class AdapterInterface {
-  /** Connect a bot to the game server. Returns when connected. */
-  async connect(persona, serverConfig) { throw new Error('Not implemented'); }
+  async connect(_persona, _serverConfig) {
+    throw new Error('connect() not implemented');
+  }
 
-  /** Read game state and return a PerceptionState object. */
-  async perceive() { throw new Error('Not implemented'); }
+  async disconnect() {
+    throw new Error('disconnect() not implemented');
+  }
 
-  /** Execute an action parsed from LLM output. */
-  async execute(action) { throw new Error('Not implemented'); }
+  perceive() {
+    throw new Error('perceive() not implemented');
+  }
 
-  /** Send a chat message in-game. */
-  async speak(text, target) { throw new Error('Not implemented'); }
+  async executeAction(_action) {
+    throw new Error('executeAction() not implemented');
+  }
 
-  /** Get meaning context for prompt building. */
-  getMeaningContext() { throw new Error('Not implemented'); }
-
-  /** Disconnect from the game. */
-  async disconnect() { throw new Error('Not implemented'); }
+  speak(_text, _target) {
+    throw new Error('speak() not implemented');
+  }
 }
 
 module.exports = AdapterInterface;
