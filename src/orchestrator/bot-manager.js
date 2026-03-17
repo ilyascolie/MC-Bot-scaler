@@ -20,10 +20,21 @@ class BotManager {
     const persona = loadPersona(personaName);
     const bot = new Bot(persona, this.settings.minecraft);
 
+    // Register event listeners BEFORE connecting so errors during connection are handled
+    bot.on('death', (botId) => this._handleDeath(botId));
+    bot.on('kicked', (botId, reason) => {
+      this.logger.logError(`${persona.name} kicked: ${reason}`);
+      this.stopBot(botId);
+    });
+    bot.on('error', (botId, err) => {
+      this.logger.logError(`${persona.name} error: ${err.message}`);
+    });
+
     try {
       await bot.connect();
     } catch (err) {
       this.logger.logError(`Failed to connect ${persona.name}: ${err.message}`);
+      bot.removeAllListeners();
       return null;
     }
 
@@ -37,15 +48,6 @@ class BotManager {
     });
     this.intervals.set(persona.id, intervalId);
 
-    bot.on('death', (botId) => this._handleDeath(botId));
-    bot.on('kicked', (botId, reason) => {
-      this.logger.logError(`${persona.name} kicked: ${reason}`);
-      this.stopBot(botId);
-    });
-    bot.on('error', (botId, err) => {
-      this.logger.logError(`${persona.name} error: ${err.message}`);
-    });
-
     this.logger.info(`${persona.name} (K${persona.kegan_level}) connected and running`);
     return bot;
   }
@@ -53,13 +55,22 @@ class BotManager {
   async spawnAll(delayMs) {
     const names = listPersonas();
     const delay = delayMs || this.settings.bot.spawnDelayMs || 1000;
+    let spawned = 0;
+    let failed = 0;
 
     for (const name of names) {
-      await this.spawnBot(name);
+      try {
+        const bot = await this.spawnBot(name);
+        if (bot) spawned++;
+        else failed++;
+      } catch (err) {
+        this.logger.logError(`Exception spawning ${name}: ${err.message}`);
+        failed++;
+      }
       if (delay > 0) await new Promise(r => setTimeout(r, delay));
     }
 
-    this.logger.info(`All ${this.bots.size} bots spawned`);
+    this.logger.info(`Spawned ${spawned}/${names.length} bots (${failed} failed)`);
   }
 
   stopBot(botId) {

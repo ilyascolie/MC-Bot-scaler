@@ -24,6 +24,13 @@ class Bot extends EventEmitter {
 
   async connect() {
     return new Promise((resolve, reject) => {
+      let settled = false;
+      const settle = (fn, val) => {
+        if (settled) return;
+        settled = true;
+        fn(val);
+      };
+
       this.bot = mineflayer.createBot({
         host: this.serverConfig.host,
         port: this.serverConfig.port,
@@ -44,7 +51,7 @@ class Bot extends EventEmitter {
         this.bot.pathfinder.setMovements(movements);
         this._alive = true;
         this._connected = true;
-        resolve();
+        settle(resolve);
       });
 
       this.bot.on('chat', (username, message) => {
@@ -85,10 +92,25 @@ class Bot extends EventEmitter {
 
       this.bot.on('error', (err) => {
         this.eventLog.push({ type: 'error', data: err.message });
-        this.emit('error', this.persona.id, err);
+        if (!this._connected) {
+          // During connection phase, reject the promise
+          settle(reject, err);
+        } else if (this.listenerCount('error') > 0) {
+          this.emit('error', this.persona.id, err);
+        }
       });
 
-      setTimeout(() => reject(new Error('Connection timeout')), 30000);
+      this.bot.on('end', (reason) => {
+        this._alive = false;
+        this._connected = false;
+        if (!settled) {
+          settle(reject, new Error(`Connection ended: ${reason || 'unknown'}`));
+        }
+      });
+
+      setTimeout(() => {
+        settle(reject, new Error('Connection timeout'));
+      }, 30000);
     });
   }
 
