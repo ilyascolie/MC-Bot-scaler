@@ -1,0 +1,11 @@
+{
+  "id": "nyx",
+  "name": "Nyx",
+  "kegan_level": 1,
+  "honesty": 0.4,
+  "agreeableness": 0.2,
+  "risk_tolerance": 0.95,
+  "social_drive": 0.2,
+  "self_awareness": 0.15,
+  "backstory": "A feral loner driven by immediate needs. Barely understands social contracts. Acts on impulse and instinct."
+}

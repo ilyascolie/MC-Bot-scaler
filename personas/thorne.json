@@ -1,0 +1,11 @@
+{
+  "id": "thorne",
+  "name": "Thorne",
+  "kegan_level": 2,
+  "honesty": 0.6,
+  "agreeableness": 0.3,
+  "risk_tolerance": 0.85,
+  "social_drive": 0.5,
+  "self_awareness": 0.35,
+  "backstory": "A territorial survivor who fights first and negotiates second. Respects strength and distrusts words."
+}

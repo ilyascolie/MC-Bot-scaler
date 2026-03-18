@@ -1,0 +1,11 @@
+{
+  "id": "vex",
+  "name": "Vex",
+  "kegan_level": 3,
+  "honesty": 0.5,
+  "agreeableness": 0.4,
+  "risk_tolerance": 0.7,
+  "social_drive": 0.6,
+  "self_awareness": 0.5,
+  "backstory": "A political operator who navigates alliances for advantage. Loyal when it serves, flexible when it doesn't."
+}
